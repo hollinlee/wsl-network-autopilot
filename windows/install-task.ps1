@@ -18,9 +18,9 @@ if ([string]::IsNullOrWhiteSpace($LinuxHome)) {
     $LinuxHome = "/home/$LinuxUser"
 }
 
-$launcherSource = Join-Path $PSScriptRoot "invoke-wsl-hidden.ps1"
+$launcherSource = Join-Path $PSScriptRoot "invoke-hidden.vbs"
 $launcherDirectory = Join-Path $env:LOCALAPPDATA "WSLNetworkAutopilot"
-$launcherPath = Join-Path $launcherDirectory "invoke-wsl-hidden.ps1"
+$launcherPath = Join-Path $launcherDirectory "invoke-hidden.vbs"
 if (-not (Test-Path $launcherSource)) {
     throw "Missing launcher: $launcherSource"
 }
@@ -29,17 +29,19 @@ Copy-Item -Path $launcherSource -Destination $launcherPath -Force
 
 $linuxCommand = "$LinuxHome/.local/bin/wsl-network"
 $arguments = @(
-    "-NoProfile"
-    "-NonInteractive"
-    "-WindowStyle Hidden"
-    "-ExecutionPolicy Bypass"
-    "-File `"$launcherPath`""
-    "-Distro `"$Distro`""
-    "-LinuxUser `"$LinuxUser`""
-    "-LinuxCommand `"$linuxCommand`""
-    "-LinuxArguments check"
+    "//B"
+    "//NoLogo"
+    "`"$launcherPath`""
+    "`"wsl.exe`""
+    "`"-d`""
+    "`"$Distro`""
+    "`"-u`""
+    "`"$LinuxUser`""
+    "`"--`""
+    "`"$linuxCommand`""
+    "`"check`""
 ) -join " "
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument $arguments
 $trigger = New-ScheduledTaskTrigger `
     -Once `
     -At (Get-Date).AddMinutes(1) `

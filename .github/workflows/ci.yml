@@ -45,3 +45,10 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
+      - name: Test hidden launcher
+        shell: pwsh
+        run: |
+          & cscript.exe //B //NoLogo windows/invoke-hidden.vbs cmd.exe /d /c exit 7
+          if ($LASTEXITCODE -ne 7) {
+            throw "Expected launcher exit code 7, got $LASTEXITCODE"
+          }
