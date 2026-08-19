@@ -1,0 +1,9 @@
+[Unit]
+Description=WSL direct-connectivity and captive-portal check
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'exec "$HOME/.local/bin/wsl-network" check'
+NoNewPrivileges=true
+PrivateTmp=true

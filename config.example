@@ -1,0 +1,24 @@
+# wsl-network-autopilot configuration
+
+# off: clear proxy variables; auto: use the proxy only when reachable;
+# always: export the proxy without probing it.
+PROXY_MODE=auto
+PROXY_SCHEME=http
+PROXY_PORT=7897
+PROXY_TIMEOUT=1
+
+# Add captive-portal hosts here so they never go through the proxy.
+NO_PROXY_LIST='localhost,127.0.0.1,::1'
+
+CONNECTIVITY_URL='http://www.msftconnecttest.com/connecttest.txt'
+CONNECTIVITY_TEXT='Microsoft Connect Test'
+
+# none, lab-login, or command
+AUTH_PROVIDER=none
+
+# Used when AUTH_PROVIDER=lab-login
+LAB_LOGIN_BIN="$HOME/.local/share/lab-login/login.sh"
+LAB_LOGIN_CONFIG="$HOME/.config/lab-login/env"
+
+# Used when AUTH_PROVIDER=command. The command always runs without proxy env.
+AUTH_COMMAND=''

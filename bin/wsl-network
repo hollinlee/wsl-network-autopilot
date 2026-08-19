@@ -1,0 +1,165 @@
+#!/bin/sh
+set -eu
+
+VERSION=0.1.0
+CONFIG_FILE=${WSL_NETWORK_CONFIG:-${XDG_CONFIG_HOME:-"$HOME/.config"}/wsl-network-autopilot/config}
+
+PROXY_MODE=auto
+PROXY_SCHEME=http
+PROXY_PORT=7897
+PROXY_TIMEOUT=1
+NO_PROXY_LIST=localhost,127.0.0.1,::1
+CONNECTIVITY_URL=http://www.msftconnecttest.com/connecttest.txt
+CONNECTIVITY_TEXT='Microsoft Connect Test'
+AUTH_PROVIDER=none
+AUTH_COMMAND=
+LAB_LOGIN_BIN=${LAB_LOGIN_BIN:-"$HOME/.local/share/lab-login/login.sh"}
+LAB_LOGIN_CONFIG=${LAB_LOGIN_CONFIG:-"$HOME/.config/lab-login/env"}
+
+if [ -f "$CONFIG_FILE" ]; then
+    # The config is user-owned shell syntax. Keep it mode 600 when it has secrets.
+    # shellcheck disable=SC1090
+    . "$CONFIG_FILE"
+fi
+
+shell_quote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+windows_host() {
+    if [ -n "${WSL_WINDOWS_HOST:-}" ]; then
+        printf '%s\n' "$WSL_WINDOWS_HOST"
+        return
+    fi
+    ip route show default 2>/dev/null | awk 'NR == 1 { print $3 }'
+}
+
+valid_port() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+        *) [ "$1" -ge 1 ] && [ "$1" -le 65535 ] ;;
+    esac
+}
+
+proxy_reachable() {
+    host=$1
+    port=$2
+
+    case "${WSL_PROXY_PROBE:-}" in
+        success) return 0 ;;
+        failure) return 1 ;;
+    esac
+
+    valid_port "$port" || return 1
+    command -v timeout >/dev/null 2>&1 || return 1
+    command -v bash >/dev/null 2>&1 || return 1
+    timeout "$PROXY_TIMEOUT" bash -c ': </dev/tcp/$1/$2' _ "$host" "$port" 2>/dev/null
+}
+
+emit_clear_proxy() {
+    printf '%s\n' 'unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy'
+    printf 'export NO_PROXY=%s\n' "$(shell_quote "$NO_PROXY_LIST")"
+    printf 'export no_proxy="$NO_PROXY"\n'
+}
+
+emit_proxy_env() {
+    emit_clear_proxy
+
+    [ "$PROXY_MODE" != off ] || return 0
+    host=$(windows_host)
+    [ -n "$host" ] || return 0
+
+    if [ "$PROXY_MODE" = always ] || proxy_reachable "$host" "$PROXY_PORT"; then
+        proxy_url="$PROXY_SCHEME://$host:$PROXY_PORT"
+        printf 'export HTTP_PROXY=%s\n' "$(shell_quote "$proxy_url")"
+        printf 'export HTTPS_PROXY="$HTTP_PROXY"\n'
+        printf 'export http_proxy="$HTTP_PROXY"\n'
+        printf 'export https_proxy="$HTTPS_PROXY"\n'
+    fi
+}
+
+direct_online() {
+    command -v curl >/dev/null 2>&1 || return 1
+    body=$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+        -u http_proxy -u https_proxy -u all_proxy \
+        curl --noproxy '*' -fsS --connect-timeout 3 --max-time 5 \
+        "$CONNECTIVITY_URL" 2>/dev/null || printf '')
+    [ "$body" = "$CONNECTIVITY_TEXT" ]
+}
+
+run_auth() {
+    case "$AUTH_PROVIDER" in
+        none)
+            printf '%s\n' 'Direct internet is unavailable; no auth provider is configured.' >&2
+            return 1
+            ;;
+        lab-login)
+            [ -x "$LAB_LOGIN_BIN" ] || {
+                printf 'lab-login is not executable: %s\n' "$LAB_LOGIN_BIN" >&2
+                return 1
+            }
+            env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+                -u http_proxy -u https_proxy -u all_proxy \
+                NO_PROXY="$NO_PROXY_LIST" no_proxy="$NO_PROXY_LIST" \
+                LAB_LOGIN_CONFIG="$LAB_LOGIN_CONFIG" "$LAB_LOGIN_BIN"
+            ;;
+        command)
+            [ -n "$AUTH_COMMAND" ] || {
+                printf '%s\n' 'AUTH_COMMAND is empty.' >&2
+                return 1
+            }
+            env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+                -u http_proxy -u https_proxy -u all_proxy \
+                NO_PROXY="$NO_PROXY_LIST" no_proxy="$NO_PROXY_LIST" \
+                sh -c "$AUTH_COMMAND"
+            ;;
+        *)
+            printf 'Unknown AUTH_PROVIDER: %s\n' "$AUTH_PROVIDER" >&2
+            return 2
+            ;;
+    esac
+}
+
+show_status() {
+    host=$(windows_host)
+    printf 'version=%s\n' "$VERSION"
+    printf 'config=%s\n' "$CONFIG_FILE"
+    printf 'windows_host=%s\n' "${host:-unavailable}"
+    printf 'proxy_mode=%s\n' "$PROXY_MODE"
+    printf 'proxy_endpoint=%s://%s:%s\n' "$PROXY_SCHEME" "${host:-unavailable}" "$PROXY_PORT"
+    if [ -n "$host" ] && proxy_reachable "$host" "$PROXY_PORT"; then
+        printf '%s\n' 'proxy_reachable=yes'
+    else
+        printf '%s\n' 'proxy_reachable=no'
+    fi
+    printf 'auth_provider=%s\n' "$AUTH_PROVIDER"
+    if direct_online; then
+        printf '%s\n' 'direct_internet=yes'
+    else
+        printf '%s\n' 'direct_internet=no'
+    fi
+}
+
+usage() {
+    cat <<'EOF'
+Usage: wsl-network COMMAND
+
+Commands:
+  env       Print shell commands that configure proxy variables
+  refresh   Alias for env; use: eval "$(wsl-network refresh)"
+  check     Check direct connectivity and invoke the optional auth provider
+  auth      Invoke the configured auth provider without a connectivity check
+  status    Show host, proxy, direct-connectivity, and provider status
+  version   Print version
+EOF
+}
+
+case "${1:-}" in
+    env|refresh) emit_proxy_env ;;
+    check) direct_online || run_auth ;;
+    auth) run_auth ;;
+    status) show_status ;;
+    version|--version|-V) printf '%s\n' "$VERSION" ;;
+    help|--help|-h|'') usage ;;
+    *) usage >&2; exit 2 ;;
+esac
