@@ -17,8 +17,29 @@ $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($LinuxHome)) {
     $LinuxHome = "/home/$LinuxUser"
 }
-$arguments = "-d `"$Distro`" -u `"$LinuxUser`" -- `"$LinuxHome/.local/bin/wsl-network`" check"
-$action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument $arguments
+
+$launcherSource = Join-Path $PSScriptRoot "invoke-wsl-hidden.ps1"
+$launcherDirectory = Join-Path $env:LOCALAPPDATA "WSLNetworkAutopilot"
+$launcherPath = Join-Path $launcherDirectory "invoke-wsl-hidden.ps1"
+if (-not (Test-Path $launcherSource)) {
+    throw "Missing launcher: $launcherSource"
+}
+New-Item -ItemType Directory -Path $launcherDirectory -Force | Out-Null
+Copy-Item -Path $launcherSource -Destination $launcherPath -Force
+
+$linuxCommand = "$LinuxHome/.local/bin/wsl-network"
+$arguments = @(
+    "-NoProfile"
+    "-NonInteractive"
+    "-WindowStyle Hidden"
+    "-ExecutionPolicy Bypass"
+    "-File `"$launcherPath`""
+    "-Distro `"$Distro`""
+    "-LinuxUser `"$LinuxUser`""
+    "-LinuxCommand `"$linuxCommand`""
+    "-LinuxArguments check"
+) -join " "
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments
 $trigger = New-ScheduledTaskTrigger `
     -Once `
     -At (Get-Date).AddMinutes(1) `
