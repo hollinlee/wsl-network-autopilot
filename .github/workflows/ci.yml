@@ -48,7 +48,11 @@ jobs:
       - name: Test hidden launcher
         shell: pwsh
         run: |
-          & cscript.exe //B //NoLogo windows/invoke-hidden.vbs cmd.exe /d /c exit 7
-          if ($LASTEXITCODE -ne 7) {
-            throw "Expected launcher exit code 7, got $LASTEXITCODE"
+          $process = Start-Process `
+            -FilePath cscript.exe `
+            -ArgumentList @("//B", "//NoLogo", "windows/invoke-hidden.vbs", "cmd.exe", "/d", "/c", "exit", "7") `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 7) {
+            throw "Expected launcher exit code 7, got $($process.ExitCode)"
           }
