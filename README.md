@@ -114,6 +114,8 @@ powershell.exe -ExecutionPolicy Bypass -File .\windows\install-task.ps1 `
   -LinuxUser your-linux-user
 ```
 
+For a nonstandard WSL home directory, also pass `-LinuxHome /your/home/path`.
+
 The task runs every five minutes and starts the selected WSL distribution when needed. Remove it with:
 
 ```powershell
